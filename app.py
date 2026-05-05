@@ -60,11 +60,20 @@ if run_button:
                     debt_ratio = ((b_annual.loc['Total Assets'] - b_annual.loc['Stockholders Equity']) / b_annual.loc['Stockholders Equity']) * 100
                 else: debt_ratio = None
                 df_fin = pd.DataFrame({'매출액(억)': rev, '영업이익(억)': op_inc, '순이익(억)': net_inc, 'EPS(원)': eps, '부채비율(%)': debt_ratio}).sort_index()
+                
+                # 재무 제표 표 중앙 정렬 스타일 적용
+                st.table(
+                    df_fin.tail(10).style.format("{:,.0f}").set_table_styles([
+                        {'selector': 'th', 'props': [('text-align', 'center')]},
+                        {'selector': 'td', 'props': [('text-align', 'center')]}
+                    ])
+                )
+
                 latest_date = df_fin.index[-1]
                 latest_eps = df_fin.loc[latest_date, 'EPS(원)']
                 shares = ticker_obj.info.get('sharesOutstanding')
                 equity = b_annual.loc['Stockholders Equity', latest_date] if 'Stockholders Equity' in b_annual.index else None
-                st.dataframe(df_fin.tail(10).style.format("{:,.0f}"))
+                
                 m1, m2, m3, m4 = st.columns(4)
                 m1.write(f"**기준일:** {latest_date.strftime('%Y-%m-%d')}")
                 if latest_eps and latest_eps > 0: m2.write(f"**계산된 PER:** {current_price / latest_eps:.2f}")
@@ -84,7 +93,6 @@ if run_button:
             cagr_price = (end_price / start_price) ** (1 / duration_years) - 1
             adjusted_cagr = market_benchmark_return if apply_market_benchmark else cagr_price
             
-            # 배당 지표 미리 계산
             divs = ticker_obj.dividends
             avg_annual_div_yield = 0
             if not divs.empty:
@@ -104,15 +112,15 @@ if run_button:
                     st.write(f"▶ **총 합산 기대수익률:** {adjusted_cagr + avg_annual_div_yield:.2%}")
                 
             if not divs.empty:
-                # 배당금 내역 표 (가운데 정렬 및 크기 최적화)
+                # 배당금 내역 표 (중앙 정렬 스타일 강화)
                 st.subheader("📅 연간 배당금 내역")
                 annual_divs = divs.groupby(divs.index.year).sum().to_frame(name='연간 분배금 합계')
                 
-                # 가독성을 위해 표 너비를 제한하고 가운데 정렬 스타일 적용
-                st.dataframe(
-                    annual_divs.style.format("{:,.2f}").set_properties(**{'text-align': 'center'}),
-                    use_container_width=False,
-                    width=300
+                st.table(
+                    annual_divs.style.format("{:,.2f}").set_table_styles([
+                        {'selector': 'th', 'props': [('text-align', 'center')]},
+                        {'selector': 'td', 'props': [('text-align', 'center')]}
+                    ])
                 )
 
                 # --- [향후 10년간 배당금 예측 (2열 배치)] ---
