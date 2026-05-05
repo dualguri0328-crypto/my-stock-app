@@ -9,7 +9,7 @@ from datetime import datetime
 # 1. 페이지 레이아웃 설정
 st.set_page_config(page_title="주식 상세 분석 및 시뮬레이션", layout="wide")
 
-# 2. 사이드바 - 모든 입력 변수 (질문자님 코드 100% 반영)
+# 2. 사이드바 - 입력 변수 (원본 로직 유지)
 st.sidebar.header("📈 종목 분석 및 시뮬레이션 설정")
 symbol = st.sidebar.text_input("종목코드 (예: SCHD, 005930)", value="SCHD").upper()
 my_avg_price = st.sidebar.number_input("매입단가", value=4750)
@@ -23,10 +23,8 @@ market_benchmark_return = st.sidebar.number_input("시장 평균 수익률 (0.08
 use_manual_growth = st.sidebar.checkbox("배당 성장률 수동 입력", value=False)
 manual_div_growth = st.sidebar.number_input("수동 배당 성장률 (0.05=5%)", value=0.05)
 
-# 실행 버튼 (이 버튼을 눌러야 결과가 나옵니다)
 run_button = st.sidebar.button("📊 분석 및 시뮬레이션 시작")
 
-# 종목 구분 로직
 if symbol.isdigit():
     yf_symbol, fdr_symbol = symbol + '.KS', symbol
 else:
@@ -35,7 +33,6 @@ else:
 # 3. 메인 분석 로직
 if run_button:
     with st.spinner('데이터를 수집하고 분석 중입니다...'):
-        # 업체명 추출
         try:
             ticker_obj = yf.Ticker(yf_symbol)
             stock_name = ticker_obj.info.get('longName') or ticker_obj.info.get('shortName') or symbol
@@ -49,35 +46,25 @@ if run_button:
         else:
             st.title(f"🚀 [{stock_name}] 분석 리포트")
             
-            # --- [재무 데이터 및 지표 섹션] ---
+            # --- [재무 데이터 섹션] ---
             st.header("🏢 최근 주요 재무 및 지표")
             try:
                 f_annual = ticker_obj.financials
                 b_annual = ticker_obj.balance_sheet
                 current_price = df_price.iloc[-1]['Close']
-
                 rev = f_annual.loc['Total Revenue'] / 1e8 if 'Total Revenue' in f_annual.index else None
                 op_inc = f_annual.loc['Operating Income'] / 1e8 if 'Operating Income' in f_annual.index else None
                 net_inc = f_annual.loc['Net Income'] / 1e8 if 'Net Income' in f_annual.index else None
                 eps = f_annual.loc['Basic EPS'] if 'Basic EPS' in f_annual.index else None
-                
                 if 'Total Assets' in b_annual.index and 'Stockholders Equity' in b_annual.index:
                     debt_ratio = ((b_annual.loc['Total Assets'] - b_annual.loc['Stockholders Equity']) / b_annual.loc['Stockholders Equity']) * 100
                 else: debt_ratio = None
-
-                df_fin = pd.DataFrame({
-                    '매출액(억)': rev, '영업이익(억)': op_inc, '순이익(억)': net_inc, 'EPS(원)': eps, '부채비율(%)': debt_ratio
-                }).sort_index()
-
-                # 지표 계산
+                df_fin = pd.DataFrame({'매출액(억)': rev, '영업이익(억)': op_inc, '순이익(억)': net_inc, 'EPS(원)': eps, '부채비율(%)': debt_ratio}).sort_index()
                 latest_date = df_fin.index[-1]
                 latest_eps = df_fin.loc[latest_date, 'EPS(원)']
                 shares = ticker_obj.info.get('sharesOutstanding')
                 equity = b_annual.loc['Stockholders Equity', latest_date] if 'Stockholders Equity' in b_annual.index else None
-                
-                # 재무 테이블 출력
                 st.dataframe(df_fin.tail(10).style.format("{:,.0f}"))
-                
                 m1, m2, m3, m4 = st.columns(4)
                 m1.write(f"**기준일:** {latest_date.strftime('%Y-%m-%d')}")
                 if latest_eps and latest_eps > 0: m2.write(f"**계산된 PER:** {current_price / latest_eps:.2f}")
@@ -85,7 +72,7 @@ if run_button:
                     m3.write(f"**계산된 PBR:** {current_price / (equity / shares):.2f}")
                     m4.write(f"**계산된 ROE:** {(df_fin.loc[latest_date, '순이익(억)'] * 1e8 / equity) * 100:.2f}%")
             except:
-                st.info("▶ 재무 데이터: 없음 (ETF 또는 데이터 비제공 종목)")
+                st.info("▶ 재무 데이터 없음")
 
             # --- [투자 분석 결과 섹션] ---
             st.divider()
@@ -97,74 +84,63 @@ if run_button:
             cagr_price = (end_price / start_price) ** (1 / duration_years) - 1
             adjusted_cagr = market_benchmark_return if apply_market_benchmark else cagr_price
 
-            col1, col2 = st.columns(2)
-            with col1:
+            col_inf1, col_inf2 = st.columns(2)
+            with col_inf1:
                 st.write(f"▶ **확인된 상장일:** {start_date_str}")
                 st.write(f"▶ **상장일가:** {start_price:,.0f}원")
                 st.write(f"▶ **현재가:** {end_price:,.0f}원")
                 st.write(f"▶ **총 투자 기간:** {duration_years:.2f}년")
-            with col2:
+            with col_inf2:
                 st.write(f"▶ **실제 시세차익(CAGR):** {cagr_price:.2%}")
                 st.write(f"▶ **적용 기대수익률:** {adjusted_cagr:.2%}")
                 
-            # 배당금 내역 표
             divs = ticker_obj.dividends
             if not divs.empty:
                 annual_divs = divs.groupby(divs.index.year).sum().to_frame(name='연간 분배금 합계')
                 st.subheader("📅 연간 배당금 내역")
                 st.table(annual_divs)
-                
                 avg_annual_div_yield = (divs.sum() / duration_years) / end_price
                 st.success(f"**연평균 배당수익률: {avg_annual_div_yield:.2%} | 총 합산 기대수익률: {adjusted_cagr + avg_annual_div_yield:.2%}**")
 
-                # --- [연도별 배당금 예측 섹션] ---
+                # --- [향후 10년간 배당금 예측 (2열 배치)] ---
                 st.divider()
-                st.header(f"💰 향후 {target_years}년간 배당금 예측")
+                st.header(f"💰 향후 {target_years}년간 배당금 예측 시뮬레이션")
                 now_year = datetime.now().year
                 full_years_data = annual_divs[annual_divs.index < now_year]
                 last_complete_year = full_years_data.index[-1]
                 last_div_per_share = full_years_data.loc[last_complete_year].values[0]
                 initial_investment = my_avg_price * my_quantity
 
-                years_list, div_list = [], []
-                st.subheader("📍 주가 비례 배당 예측")
-                for year in range(1, target_years + 1):
-                    expected_price = end_price * np.exp(adjusted_cagr * year)
-                    expected_div = expected_price * (last_div_per_share / end_price) * my_quantity
-                    yoc_val = (expected_div / initial_investment) * 100
-                    st.write(f"▶ **{last_complete_year + year}년 예상:** 약 {expected_div:,.0f}원 ({yoc_val:.2f}%) (월 약 {expected_div/12:,.0f}원)")
-                    years_list.append(str(last_complete_year + year))
-                    div_list.append(expected_div)
-
-                st.subheader("📍 배당금 자체 성장 분석 (YoC)")
-                if len(full_years_data) >= 2:
-                    start_comp_year = full_years_data.index[1]
-                    start_comp_div = full_years_data.loc[start_comp_year].values[0]
-                    n_gap = last_complete_year - start_comp_year
-                    calc_div_cagr = manual_div_growth if use_manual_growth else (last_div_per_share / start_comp_div)**(1/n_gap) - 1
-                    
-                    st.write(f"▶ **산출 배당 성장률:** {calc_div_cagr:.2%}")
-                    start_total_div_pure = last_div_per_share * my_quantity
-                    for y in range(1, target_years + 1):
-                        proj_div = start_total_div_pure * ((1 + calc_div_cagr) ** y)
-                        yoc = (proj_div / initial_investment) * 100
-                        st.write(f"▶ **{last_complete_year + y}년 예상:** {proj_div:,.0f}원 ({yoc:.2f}%)")
+                col_pred_left, col_pred_right = st.columns(2)
                 
-                # --- [시각화 섹션: 상장일 그래프 및 배당금 흐름] ---
+                with col_pred_left:
+                    st.subheader("📍 주가 비례 배당 예측")
+                    years_list, div_list = [], []
+                    for year in range(1, target_years + 1):
+                        expected_price = end_price * np.exp(adjusted_cagr * year)
+                        expected_div = expected_price * (last_div_per_share / end_price) * my_quantity
+                        yoc_val = (expected_div / initial_investment) * 100
+                        st.write(f"**{last_complete_year + year}년:** {expected_div:,.0f}원 ({yoc_val:.2f}%)")
+                        years_list.append(str(last_complete_year + year))
+                        div_list.append(expected_div)
+
+                with col_pred_right:
+                    st.subheader("📍 배당금 자체 성장 분석")
+                    if len(full_years_data) >= 2:
+                        start_comp_year = full_years_data.index[1]
+                        start_comp_div = full_years_data.loc[start_comp_year].values[0]
+                        n_gap = last_complete_year - start_comp_year
+                        calc_div_cagr = manual_div_growth if use_manual_growth else (last_div_per_share / start_comp_div)**(1/n_gap) - 1
+                        st.write(f"▶ **분석 성장률:** {calc_div_cagr:.2%}")
+                        start_total_div_pure = last_div_per_share * my_quantity
+                        for y in range(1, target_years + 1):
+                            proj_div = start_total_div_pure * ((1 + calc_div_cagr) ** y)
+                            yoc = (proj_div / initial_investment) * 100
+                            st.write(f"**{last_complete_year + y}년:** {proj_div:,.0f}원 ({yoc:.2f}%)")
+                
+                # --- [몬테카를로 결과 텍스트] ---
                 st.divider()
-                st.header("📉 차트 분석")
-                
-                # 1. 상장일~현재 주가 그래프
-                st.subheader("상장일 이후 주가 히스토리")
-                fig1, ax1 = plt.subplots(figsize=(10, 5))
-                ax1.plot(df_price.index, df_price['Close'], color='black', linewidth=1.5)
-                ax1.fill_between(df_price.index, df_price['Close'], color='gray', alpha=0.1)
-                ax1.set_title(f"{symbol} Historical Price")
-                ax1.grid(True, alpha=0.3)
-                st.pyplot(fig1)
-
-                # 2. 자산 분포 및 배당 성장 그래프
-                st.subheader(f"미래 자산 분포 및 배당 예측 트렌드")
+                st.header(f"🔮 {target_years}년 뒤 몬테카를로 예측")
                 daily_vol = df_price['Close'].pct_change().std()
                 trading_days = 252 * target_years
                 shocks = np.random.normal(size=(simulations, trading_days))
@@ -173,28 +149,36 @@ if run_button:
                 path_returns = np.exp(drift + vol * shocks)
                 simulation_results = end_price * np.prod(path_returns, axis=1) * my_quantity
                 
-                fig2, (ax2, ax3) = plt.subplots(1, 2, figsize=(12, 5))
-                # 히스토그램
-                ax2.hist(simulation_results, bins=50, color='royalblue', edgecolor='black', alpha=0.7)
-                ax2.axvline(initial_investment, color='red', linestyle='--')
-                ax2.set_title("Asset Distribution")
-                # 배당 성장 그래프
-                ax3.plot(years_list, div_list, marker='o', color='forestgreen')
-                for i, v in enumerate(div_list):
-                    ax3.text(i, v, f'{v:,.0f}', fontsize=8, va='bottom', ha='center')
-                ax3.set_title("Dividend Forecast Trend")
-                plt.tight_layout()
-                st.pyplot(fig2)
-
-                # 몬테카를로 결과 텍스트
-                st.divider()
-                st.header(f"🔮 {target_years}년 뒤 몬테카를로 예측")
                 st.write(f"▶ **초기 투자 금액:** {initial_investment:,.0f}원")
                 st.write(f"▶ **예상 자산(평균):** {np.mean(simulation_results):,.0f}원")
                 st.write(f"▶ **하위 5% (최악):** {np.percentile(simulation_results, 5):,.0f}원")
                 st.write(f"▶ **상위 5% (최고):** {np.percentile(simulation_results, 95):,.0f}원")
 
+                # --- [그래프 섹션 (가장 마지막에 배치)] ---
+                st.divider()
+                st.header("📉 시각화 분석 차트")
+                
+                st.subheader("1. 상장일 이후 주가 히스토리")
+                fig1, ax1 = plt.subplots(figsize=(10, 4))
+                ax1.plot(df_price.index, df_price['Close'], color='black', linewidth=1)
+                ax1.fill_between(df_price.index, df_price['Close'], color='gray', alpha=0.1)
+                ax1.grid(True, alpha=0.2)
+                st.pyplot(fig1)
+
+                st.subheader("2. 자산 분포 및 배당 예측 트렌드")
+                fig2, (ax2, ax3) = plt.subplots(1, 2, figsize=(12, 5))
+                ax2.hist(simulation_results, bins=50, color='royalblue', edgecolor='black', alpha=0.7)
+                ax2.axvline(initial_investment, color='red', linestyle='--')
+                ax2.set_title("Monte Carlo Asset Distribution")
+                
+                ax3.plot(years_list, div_list, marker='o', color='forestgreen')
+                for i, v in enumerate(div_list):
+                    ax3.text(i, v, f'{v:,.0f}', fontsize=8, va='bottom', ha='center')
+                ax3.set_title("Dividend Growth Forecast")
+                plt.tight_layout()
+                st.pyplot(fig2)
+
             else:
                 st.error("배당 내역을 불러오지 못했습니다.")
 else:
-    st.info("왼쪽 사이드바의 **[분석 및 시뮬레이션 시작]** 버튼을 눌러주세요.")
+    st.info("사이드바에서 설정 후 **[분석 및 시뮬레이션 시작]** 버튼을 클릭하세요.")
