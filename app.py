@@ -83,6 +83,12 @@ if run_button:
             duration_years = (df_price.index[-1] - df_price.index[0]).days / 365.25
             cagr_price = (end_price / start_price) ** (1 / duration_years) - 1
             adjusted_cagr = market_benchmark_return if apply_market_benchmark else cagr_price
+            
+            # 배당 지표 미리 계산
+            divs = ticker_obj.dividends
+            avg_annual_div_yield = 0
+            if not divs.empty:
+                avg_annual_div_yield = (divs.sum() / duration_years) / end_price
 
             col_inf1, col_inf2 = st.columns(2)
             with col_inf1:
@@ -93,14 +99,21 @@ if run_button:
             with col_inf2:
                 st.write(f"▶ **실제 시세차익(CAGR):** {cagr_price:.2%}")
                 st.write(f"▶ **적용 기대수익률:** {adjusted_cagr:.2%}")
+                if not divs.empty:
+                    st.write(f"▶ **연평균 배당수익률:** {avg_annual_div_yield:.2%}")
+                    st.write(f"▶ **총 합산 기대수익률:** {adjusted_cagr + avg_annual_div_yield:.2%}")
                 
-            divs = ticker_obj.dividends
             if not divs.empty:
-                annual_divs = divs.groupby(divs.index.year).sum().to_frame(name='연간 분배금 합계')
+                # 배당금 내역 표 (가운데 정렬 및 크기 최적화)
                 st.subheader("📅 연간 배당금 내역")
-                st.table(annual_divs)
-                avg_annual_div_yield = (divs.sum() / duration_years) / end_price
-                st.success(f"**연평균 배당수익률: {avg_annual_div_yield:.2%} | 총 합산 기대수익률: {adjusted_cagr + avg_annual_div_yield:.2%}**")
+                annual_divs = divs.groupby(divs.index.year).sum().to_frame(name='연간 분배금 합계')
+                
+                # 가독성을 위해 표 너비를 제한하고 가운데 정렬 스타일 적용
+                st.dataframe(
+                    annual_divs.style.format("{:,.2f}").set_properties(**{'text-align': 'center'}),
+                    use_container_width=False,
+                    width=300
+                )
 
                 # --- [향후 10년간 배당금 예측 (2열 배치)] ---
                 st.divider()
